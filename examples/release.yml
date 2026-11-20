@@ -1,0 +1,60 @@
+name: Salesforce release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      package-versions:
+        description: Released 04t IDs in install order. Leave blank for metadata-only releases.
+        type: string
+        default: ''
+      deploy-prod:
+        description: Request Prod deployment after UAT passes. Configure Prod approval first.
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  dev:
+    if: github.event_name == 'push'
+    uses: andysolomon/salesforce-workflows/.github/workflows/deploy-org.yml@v1
+    with:
+      stage: dev
+      release-sha: ${{ github.sha }}
+      manifest: manifest/package.xml
+    secrets:
+      SF_JWT_KEY: ${{ secrets.SF_JWT_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      ALCHEMY_APP_SECRETS: ${{ secrets.ALCHEMY_APP_SECRETS }}
+
+  uat:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    uses: andysolomon/salesforce-workflows/.github/workflows/deploy-org.yml@v1
+    with:
+      stage: uat
+      release-sha: ${{ github.sha }}
+      manifest: manifest/package.xml
+      package-versions: ${{ inputs.package-versions }}
+    secrets:
+      SF_JWT_KEY: ${{ secrets.SF_JWT_KEY }}
+      SF_PACKAGE_INSTALLATION_KEY: ${{ secrets.SF_PACKAGE_INSTALLATION_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      ALCHEMY_APP_SECRETS: ${{ secrets.ALCHEMY_APP_SECRETS }}
+
+  prod:
+    needs: uat
+    if: inputs.deploy-prod
+    uses: andysolomon/salesforce-workflows/.github/workflows/deploy-org.yml@v1
+    with:
+      stage: prod
+      release-sha: ${{ github.sha }}
+      manifest: manifest/package.xml
+      package-versions: ${{ inputs.package-versions }}
+    secrets:
+      SF_JWT_KEY: ${{ secrets.SF_JWT_KEY }}
+      SF_PACKAGE_INSTALLATION_KEY: ${{ secrets.SF_PACKAGE_INSTALLATION_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      ALCHEMY_APP_SECRETS: ${{ secrets.ALCHEMY_APP_SECRETS }}

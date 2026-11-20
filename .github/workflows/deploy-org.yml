@@ -1,0 +1,190 @@
+name: Deploy Salesforce org
+
+on:
+  workflow_call:
+    inputs:
+      stage:
+        description: GitHub Environment, Salesforce CLI alias, and Alchemy stage
+        required: true
+        type: string
+      release-sha:
+        description: Full commit SHA from the calling Salesforce repository
+        required: true
+        type: string
+      manifest:
+        description: Path to the unpackaged metadata manifest, if any
+        type: string
+        default: ''
+      package-versions:
+        description: Space-separated 04t package version IDs in install order
+        type: string
+        default: ''
+      alchemy-config:
+        description: Alchemy stack entry point. Pass an empty string to skip Alchemy.
+        type: string
+        default: alchemy.run.ts
+    secrets:
+      SF_JWT_KEY:
+        description: PEM private key for the target org's deployment app
+        required: true
+      SF_PACKAGE_INSTALLATION_KEY:
+        description: Optional installation key shared by the packages in this release
+      CLOUDFLARE_API_TOKEN:
+        description: Optional token for the app's Alchemy state store
+      ALCHEMY_APP_SECRETS:
+        description: Optional app-specific secret payload read by the Alchemy stack
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    environment: ${{ inputs.stage }}
+    concurrency:
+      group: salesforce-deploy-${{ inputs.stage }}
+      cancel-in-progress: false
+    defaults:
+      run:
+        shell: bash
+    env:
+      STAGE: ${{ inputs.stage }}
+      RELEASE_SHA: ${{ inputs.release-sha }}
+      METADATA_MANIFEST: ${{ inputs.manifest }}
+      PACKAGE_VERSIONS: ${{ inputs.package-versions }}
+      ALCHEMY_CONFIG: ${{ inputs.alchemy-config }}
+      SF_TARGET_ORG: ${{ inputs.stage }}
+    steps:
+      - name: Validate release coordinates
+        run: |
+          case "$STAGE" in
+            dev|uat|prod) ;;
+            *) echo 'Stage must be dev, uat, or prod.' >&2; exit 1 ;;
+          esac
+          if [[ ! "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo 'Provide the full lowercase release commit SHA.' >&2
+            exit 1
+          fi
+          package_id='04t[a-zA-Z0-9]{12}([a-zA-Z0-9]{3})?'
+          if [[ -n "$PACKAGE_VERSIONS" && ! "$PACKAGE_VERSIONS" =~ ^$package_id(\ +$package_id)*$ ]]; then
+            echo 'Provide exact 04t package version IDs separated by spaces.' >&2
+            exit 1
+          fi
+          if [[ -z "$PACKAGE_VERSIONS" && -z "$METADATA_MANIFEST" && -z "$ALCHEMY_CONFIG" ]]; then
+            echo 'Select metadata, packages, or an Alchemy stack to deploy.' >&2
+            exit 1
+          fi
+
+      - name: Check out the app release
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.release-sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Install and check app dependencies
+        run: |
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          if [[ -n "$METADATA_MANIFEST" || -n "$PACKAGE_VERSIONS" ]]; then
+            test -f sfdx-project.json
+          fi
+          if [[ -n "$METADATA_MANIFEST" ]]; then
+            test -f "$METADATA_MANIFEST"
+          fi
+          if [[ -n "$ALCHEMY_CONFIG" ]]; then
+            test -f "$ALCHEMY_CONFIG"
+          fi
+          node -e 'if (!require("./package.json").scripts?.["salesforce:smoke"]) throw Error("Define the salesforce:smoke npm script")'
+          npm ci
+          if [[ -n "$ALCHEMY_CONFIG" ]]; then
+            test -x node_modules/.bin/alchemy
+          fi
+          npm install --global @salesforce/cli@2.159.7
+
+      - name: Log in and verify the target org
+        env:
+          SF_JWT_KEY: ${{ secrets.SF_JWT_KEY }}
+          SF_CLIENT_ID: ${{ vars.SF_CLIENT_ID }}
+          SF_USERNAME: ${{ vars.SF_USERNAME }}
+          SF_LOGIN_URL: ${{ vars.SF_LOGIN_URL }}
+          SF_ORG_ID: ${{ vars.SF_ORG_ID }}
+        run: |
+          : "${SF_JWT_KEY:?Set SF_JWT_KEY for the target environment}"
+          : "${SF_CLIENT_ID:?Set SF_CLIENT_ID for the target environment}"
+          : "${SF_USERNAME:?Set SF_USERNAME for the target environment}"
+          : "${SF_LOGIN_URL:?Set SF_LOGIN_URL for the target environment}"
+          if [[ ! "$SF_ORG_ID" =~ ^00D[a-zA-Z0-9]{12}([a-zA-Z0-9]{3})?$ ]]; then
+            echo 'Set SF_ORG_ID to the expected Salesforce org ID.' >&2
+            exit 1
+          fi
+          key_file=$(mktemp)
+          trap 'rm -f -- "$key_file"' EXIT
+          printf '%s\n' "$SF_JWT_KEY" > "$key_file"
+          sf org login jwt --alias "$STAGE" --client-id "$SF_CLIENT_ID" \
+            --username "$SF_USERNAME" --instance-url "$SF_LOGIN_URL" \
+            --jwt-key-file "$key_file" >/dev/null
+          actual_id=$(sf org display --target-org "$STAGE" --json | jq -er '.result.id')
+          if [[ "${actual_id:0:15}" != "${SF_ORG_ID:0:15}" ]]; then
+            echo 'Authenticated org does not match SF_ORG_ID.' >&2
+            exit 1
+          fi
+
+      - name: Record release in the job summary
+        run: |
+          {
+            printf '### Salesforce deployment to %s\n\n' "$STAGE"
+            printf -- '- Commit `%s`\n' "$RELEASE_SHA"
+            printf -- '- Package versions `%s`\n' "${PACKAGE_VERSIONS:-none}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install package versions
+        if: inputs.package-versions != ''
+        env:
+          SF_PACKAGE_INSTALLATION_KEY: ${{ secrets.SF_PACKAGE_INSTALLATION_KEY }}
+        run: |
+          read -r -a packages <<< "$PACKAGE_VERSIONS"
+          installation_key=()
+          if [[ -n "$SF_PACKAGE_INSTALLATION_KEY" ]]; then
+            installation_key=(--installation-key "$SF_PACKAGE_INSTALLATION_KEY")
+          fi
+          for package in "${packages[@]}"; do
+            sf package install --package "$package" --target-org "$STAGE" \
+              --wait 60 --publish-wait 15 --security-type AdminsOnly \
+              --upgrade-type DeprecateOnly --no-prompt "${installation_key[@]}" --json \
+              | jq -e '.result | {Id, Status} | select(.Status == "SUCCESS")'
+          done
+
+      - name: Deploy unpackaged metadata to a sandbox
+        if: inputs.manifest != '' && inputs.stage != 'prod'
+        run: |
+          sf project deploy start --manifest="$METADATA_MANIFEST" \
+            --target-org "$STAGE" --wait 60 --json \
+            | jq -e '.result | {id, status} | select(.status == "Succeeded")'
+
+      - name: Validate and deploy unpackaged metadata to production
+        if: inputs.manifest != '' && inputs.stage == 'prod'
+        run: |
+          job_id=$(sf project deploy validate --manifest="$METADATA_MANIFEST" \
+            --target-org "$STAGE" --test-level RunLocalTests --wait 60 --json \
+            | jq -er '.result | select(.status == "Succeeded") | .id // empty')
+          printf 'Production validation job %s succeeded.\n' "$job_id"
+          sf project deploy quick --job-id "$job_id" --target-org "$STAGE" --wait 60 --json \
+            | jq -e '.result | {id, status} | select(.status == "Succeeded")'
+
+      - name: Plan and apply Alchemy configuration
+        if: inputs.alchemy-config != ''
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ALCHEMY_APP_SECRETS: ${{ secrets.ALCHEMY_APP_SECRETS }}
+        run: |
+          npm exec --no -- alchemy plan --config "$ALCHEMY_CONFIG" --stage "$STAGE"
+          npm exec --no -- alchemy deploy --config "$ALCHEMY_CONFIG" --stage "$STAGE" --yes
+
+      - name: Smoke test the target org
+        run: npm run salesforce:smoke
