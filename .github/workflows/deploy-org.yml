@@ -138,8 +138,8 @@ jobs:
         run: |
           {
             printf '### Salesforce deployment to %s\n\n' "$STAGE"
-            printf -- '- Commit `%s`\n' "$RELEASE_SHA"
-            printf -- '- Package versions `%s`\n' "${PACKAGE_VERSIONS:-none}"
+            printf -- "- Commit \`%s\`\n" "$RELEASE_SHA"
+            printf -- "- Package versions \`%s\`\n" "${PACKAGE_VERSIONS:-none}"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Install package versions
