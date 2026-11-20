@@ -1,0 +1,17 @@
+name: Deploy sandbox metadata
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    uses: andysolomon/salesforce-workflows/.github/workflows/deploy-org.yml@main
+    with:
+      stage: dev
+      environment-name: integration-sandbox
+      release-sha: ${{ github.sha }}
+      manifest: manifest/package.xml

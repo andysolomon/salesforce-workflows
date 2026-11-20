@@ -4,8 +4,18 @@ on:
   workflow_call:
     inputs:
       stage:
-        description: GitHub Environment, Salesforce CLI alias, and Alchemy stage
+        description: Release stage (dev, uat, or prod), Salesforce CLI alias, and Alchemy stage
         required: true
+        type: string
+      environment-name:
+        description: GitHub Environment in the calling repository. Defaults to the release stage.
+        type: string
+      runs-on:
+        description: GitHub runner selector encoded as JSON (labels or a runner group).
+        type: string
+        default: '["ubuntu-latest"]'
+      container-image:
+        description: Optional Linux job container image provided by the caller.
         type: string
       release-sha:
         description: Full commit SHA from the calling Salesforce repository
@@ -20,13 +30,16 @@ on:
         type: string
         default: ''
       alchemy-config:
-        description: Alchemy stack entry point. Pass an empty string to skip Alchemy.
+        description: Optional Alchemy stack entry point from the calling repository.
         type: string
-        default: alchemy.run.ts
+        default: ''
+      smoke-test:
+        description: Run the calling app's salesforce:smoke npm script after deployment.
+        type: boolean
+        default: false
     secrets:
       SF_JWT_KEY:
-        description: PEM private key for the target org's deployment app
-        required: true
+        description: PEM private key for the target org's deployment app (may be supplied by the environment).
       SF_PACKAGE_INSTALLATION_KEY:
         description: Optional installation key shared by the packages in this release
       CLOUDFLARE_API_TOKEN:
@@ -39,16 +52,18 @@ permissions:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    container: ${{ inputs.container-image }}
     timeout-minutes: 360
-    environment: ${{ inputs.stage }}
+    environment: ${{ inputs.environment-name || inputs.stage }}
     concurrency:
-      group: salesforce-deploy-${{ inputs.stage }}
+      group: salesforce-deploy-${{ inputs.environment-name || inputs.stage }}
       cancel-in-progress: false
     defaults:
       run:
         shell: bash
     env:
+      SF_CLI_VERSION: '2.159.7'
       STAGE: ${{ inputs.stage }}
       RELEASE_SHA: ${{ inputs.release-sha }}
       METADATA_MANIFEST: ${{ inputs.manifest }}
@@ -82,12 +97,25 @@ jobs:
           ref: ${{ inputs.release-sha }}
           persist-credentials: false
 
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - name: Trust the mounted checkout in the job container
+        if: inputs.container-image != ''
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Check for the pinned Salesforce CLI
+        id: cli
+        run: |
+          if command -v sf >/dev/null && [[ "$(sf --version)" == "@salesforce/cli/${SF_CLI_VERSION} "* ]]; then
+            echo 'installed=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Node for CLI installation or app scripts
+        if: steps.cli.outputs.installed != 'true' || inputs.alchemy-config != '' || inputs.smoke-test
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '24'
           package-manager-cache: false
 
-      - name: Install and check app dependencies
+      - name: Verify the release files
         run: |
           test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
           if [[ -n "$METADATA_MANIFEST" || -n "$PACKAGE_VERSIONS" ]]; then
@@ -99,12 +127,26 @@ jobs:
           if [[ -n "$ALCHEMY_CONFIG" ]]; then
             test -f "$ALCHEMY_CONFIG"
           fi
+
+      - name: Check the smoke test script
+        if: inputs.smoke-test
+        run: |
           node -e 'if (!require("./package.json").scripts?.["salesforce:smoke"]) throw Error("Define the salesforce:smoke npm script")'
+
+      - name: Install app dependencies
+        if: inputs.alchemy-config != '' || inputs.smoke-test
+        run: |
           npm ci
           if [[ -n "$ALCHEMY_CONFIG" ]]; then
             test -x node_modules/.bin/alchemy
           fi
-          npm install --global @salesforce/cli@2.159.7
+
+      - name: Install the pinned Salesforce CLI
+        if: steps.cli.outputs.installed != 'true'
+        run: |
+          cli_prefix=$(mktemp -d "$RUNNER_TEMP/salesforce-cli.XXXXXXXX")
+          npm install --global --prefix "$cli_prefix" "@salesforce/cli@$SF_CLI_VERSION"
+          echo "$cli_prefix/bin" >> "$GITHUB_PATH"
 
       - name: Log in and verify the target org
         env:
@@ -187,4 +229,5 @@ jobs:
           npm exec --no -- alchemy deploy --config "$ALCHEMY_CONFIG" --stage "$STAGE" --yes
 
       - name: Smoke test the target org
+        if: inputs.smoke-test
         run: npm run salesforce:smoke
