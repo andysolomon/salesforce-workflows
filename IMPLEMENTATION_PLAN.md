@@ -5,5 +5,6 @@ Support one reusable GitHub Actions job for metadata, package installation and o
 - Verify the release SHA and target org before deploying. Use production validation and quick deploy for production metadata.
 - Support metadata-only Salesforce projects and package installs. Enable Alchemy and the app smoke test independently.
 - Provide working caller examples for a sandbox and a staged release. Check both caller interfaces in CI.
+- Support an optional caller-owned npm build script for generated metadata assets. Build in the deployment checkout before Salesforce login.
 - Provide a standalone scratch org CI example that app repos can copy to create an org, deploy metadata, run Apex tests and clean up on same-repository pull requests targeting `main`. Include it in workflow linting.
 - Show how to inspect a completed scratch org job in GitHub Actions in a recorded walkthrough.

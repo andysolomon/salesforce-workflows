@@ -33,6 +33,10 @@ on:
         description: Optional Alchemy stack entry point from the calling repository.
         type: string
         default: ''
+      build-script:
+        description: Optional npm script to build deployable assets in the calling repository.
+        type: string
+        default: ''
       smoke-test:
         description: Run the calling app's salesforce:smoke npm script after deployment.
         type: boolean
@@ -109,7 +113,7 @@ jobs:
           fi
 
       - name: Set up Node for CLI installation or app scripts
-        if: steps.cli.outputs.installed != 'true' || inputs.alchemy-config != '' || inputs.smoke-test
+        if: steps.cli.outputs.installed != 'true' || inputs.build-script != '' || inputs.alchemy-config != '' || inputs.smoke-test
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '24'
@@ -134,7 +138,7 @@ jobs:
           node -e 'if (!require("./package.json").scripts?.["salesforce:smoke"]) throw Error("Define the salesforce:smoke npm script")'
 
       - name: Install app dependencies
-        if: inputs.alchemy-config != '' || inputs.smoke-test
+        if: inputs.build-script != '' || inputs.alchemy-config != '' || inputs.smoke-test
         run: |
           npm ci
           if [[ -n "$ALCHEMY_CONFIG" ]]; then
@@ -147,6 +151,12 @@ jobs:
           cli_prefix=$(mktemp -d "$RUNNER_TEMP/salesforce-cli.XXXXXXXX")
           npm install --global --prefix "$cli_prefix" "@salesforce/cli@$SF_CLI_VERSION"
           echo "$cli_prefix/bin" >> "$GITHUB_PATH"
+
+      - name: Build app assets
+        if: inputs.build-script != ''
+        env:
+          APP_BUILD_SCRIPT: ${{ inputs.build-script }}
+        run: npm run -- "$APP_BUILD_SCRIPT"
 
       - name: Log in and verify the target org
         env:
