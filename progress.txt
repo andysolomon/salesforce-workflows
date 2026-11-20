@@ -1,3 +1,5 @@
 Implemented caller-selected runners, job containers and GitHub Environments in the local deployment workflow. Added a metadata-only caller and made the staged release caller opt in to Alchemy and smoke testing.
 Verified both callers with actionlint. Exercised the workflow shell steps locally with simulated Salesforce responses for metadata, packages, production promotion, CLI installation, org-ID mismatch and a missing smoke script.
 Live runner routing and Salesforce deployment remain unverified for this workflow revision.
+Added a scratch org CI example for same-repository pull requests targeting `main` and documented Dev Hub setup. The existing lint job includes it. Verified workflow linting, the pinned Salesforce CLI flags and simulated setup, provisioning, deployment and cleanup paths. A live pull request run against a Dev Hub remains unverified.
+Recorded a narrated GitHub walkthrough of the example and the successful scratch org job on Salesforce's Apex Recipes PR #770. Linked the captioned MP4 from the README.

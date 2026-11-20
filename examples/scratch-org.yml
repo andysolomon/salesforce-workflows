@@ -1,0 +1,63 @@
+name: Salesforce scratch org CI
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  scratch-org-test:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    environment: scratch-org-ci
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Verify Salesforce project files
+        run: |
+          test -f sfdx-project.json
+          test -f config/project-scratch-def.json
+          test -f manifest/package.xml
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Install Salesforce CLI
+        run: npm install --global @salesforce/cli@2.159.7
+
+      - name: Authenticate to the Dev Hub
+        env:
+          DEVHUB_SFDX_URL: ${{ secrets.DEVHUB_SFDX_URL }}
+        run: |
+          : "${DEVHUB_SFDX_URL:?Set DEVHUB_SFDX_URL in the scratch-org-ci environment}"
+          # The CLI's stdin flag must come last when it has no explicit value.
+          printf '%s\n' "$DEVHUB_SFDX_URL" | sf org login sfdx-url --alias dev-hub --sfdx-url-stdin
+
+      - name: Create a one-day scratch org
+        id: create-scratch-org
+        run: |
+          sf org create scratch --target-dev-hub dev-hub --alias ci-scratch \
+            --definition-file config/project-scratch-def.json \
+            --duration-days 1 --no-track-source --wait 15
+
+      - name: Deploy metadata and run Apex tests
+        run: |
+          sf project deploy start --target-org ci-scratch --manifest manifest/package.xml \
+            --test-level RunLocalTests --wait 30 --json \
+            | jq -e 'if .result.status == "Succeeded"
+                     then .result | {id, status, numberTestsCompleted}
+                     else halt_error(1) end'
+
+      - name: Delete the scratch org
+        if: always() && steps.create-scratch-org.outcome == 'success'
+        run: sf org delete scratch --target-org ci-scratch --no-prompt
