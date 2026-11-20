@@ -20,11 +20,13 @@ permissions:
 jobs:
   dev:
     if: github.event_name == 'push'
-    uses: andysolomon/salesforce-workflows/.github/workflows/deploy-org.yml@v1
+    uses: andysolomon/salesforce-workflows/.github/workflows/deploy-org.yml@main
     with:
       stage: dev
       release-sha: ${{ github.sha }}
       manifest: manifest/package.xml
+      alchemy-config: alchemy.run.ts
+      smoke-test: true
     secrets:
       SF_JWT_KEY: ${{ secrets.SF_JWT_KEY }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -32,11 +34,13 @@ jobs:
 
   uat:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
-    uses: andysolomon/salesforce-workflows/.github/workflows/deploy-org.yml@v1
+    uses: andysolomon/salesforce-workflows/.github/workflows/deploy-org.yml@main
     with:
       stage: uat
       release-sha: ${{ github.sha }}
       manifest: manifest/package.xml
+      alchemy-config: alchemy.run.ts
+      smoke-test: true
       package-versions: ${{ inputs.package-versions }}
     secrets:
       SF_JWT_KEY: ${{ secrets.SF_JWT_KEY }}
@@ -47,11 +51,13 @@ jobs:
   prod:
     needs: uat
     if: inputs.deploy-prod
-    uses: andysolomon/salesforce-workflows/.github/workflows/deploy-org.yml@v1
+    uses: andysolomon/salesforce-workflows/.github/workflows/deploy-org.yml@main
     with:
       stage: prod
       release-sha: ${{ github.sha }}
       manifest: manifest/package.xml
+      alchemy-config: alchemy.run.ts
+      smoke-test: true
       package-versions: ${{ inputs.package-versions }}
     secrets:
       SF_JWT_KEY: ${{ secrets.SF_JWT_KEY }}

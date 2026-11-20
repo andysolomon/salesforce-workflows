@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - name: Check workflows and the example caller
+      - name: Check workflows and example callers
         shell: bash
         run: |
           cd "$RUNNER_TEMP"
@@ -27,6 +27,8 @@ jobs:
           tar -xzf "$archive" actionlint
 
           cd "$GITHUB_WORKSPACE"
-          sed 's|andysolomon/salesforce-workflows/.github/workflows/deploy-org.yml@v1|./.github/workflows/deploy-org.yml|' \
-            examples/release.yml > .github/workflows/example-caller.yml
+          for caller in examples/*.yml; do
+            sed 's|andysolomon/salesforce-workflows/.github/workflows/deploy-org.yml@main|./.github/workflows/deploy-org.yml|' \
+              "$caller" > ".github/workflows/example-${caller##*/}"
+          done
           "$RUNNER_TEMP/actionlint" -color
