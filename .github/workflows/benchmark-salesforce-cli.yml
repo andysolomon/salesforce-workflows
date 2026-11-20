@@ -43,6 +43,9 @@ jobs:
       - name: Install Salesforce CLI
         if: matrix.method == 'npm'
         run: npm install --global @salesforce/cli@2.159.7
+      - name: Trust the mounted checkout
+        if: matrix.method == 'slim'
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Smoke test toolchain without Salesforce credentials
         run: |
           git rev-parse --verify HEAD
