@@ -34,6 +34,8 @@ The job serializes deployments to the same GitHub Environment within one calling
 
 ## Test in a scratch org
 
+The [GitHub walkthrough (MP4, 1m 30s)](docs/videos/scratch-org-pull-request.mp4) shows this example and follows a completed [Apex Recipes pull request check](https://github.com/trailheadapps/apex-recipes/actions/runs/38726004243/job/116392083619) through scratch org creation, Apex tests, and cleanup.
+
 Copy [examples/scratch-org.yml](examples/scratch-org.yml) into the app's `.github/workflows/` directory. The workflow runs when a pull request targeting `main` is opened, reopened, or updated with new commits. The scratch org job runs for branches in the same repository and skips Dependabot-triggered runs. It creates a one-day scratch org, deploys the manifest with `RunLocalTests`, and attempts to delete the org even if deployment or testing fails. The one-day expiration also applies if the run ends before it can delete the org.
 
 1. Commit `sfdx-project.json`, `config/project-scratch-def.json`, and `manifest/package.xml` in the app repo. Include the Apex classes and tests you want to deploy in the manifest.
