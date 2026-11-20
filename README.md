@@ -32,6 +32,14 @@ The example passes secrets by name. In the hosted runner, configure the Alchemy 
 
 The job serializes deployments to the same GitHub Environment within one calling repo. GitHub concurrency groups are repository-scoped. If multiple app repos write to the same org, coordinate those deployments across repos.
 
+## Test in a scratch org
+
+Copy [examples/scratch-org.yml](examples/scratch-org.yml) into the app's `.github/workflows/` directory. The workflow runs when a pull request targeting `main` is opened, reopened, or updated with new commits. The scratch org job runs for branches in the same repository and skips Dependabot-triggered runs. It creates a one-day scratch org, deploys the manifest with `RunLocalTests`, and attempts to delete the org even if deployment or testing fails. The one-day expiration also applies if the run ends before it can delete the org.
+
+1. Commit `sfdx-project.json`, `config/project-scratch-def.json`, and `manifest/package.xml` in the app repo. Include the Apex classes and tests you want to deploy in the manifest.
+2. Create the `scratch-org-ci` GitHub Environment in the app repo. Under **Deployment branches and tags**, choose **Selected branches and tags** and add the branch rule `refs/pull/*/merge` so pull request runs can access the environment. [GitHub environment branch rules](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments#deployment-branches-and-tags)
+3. Log in to a Dev Hub locally using `sf org login web --alias dev-hub` with a user authorized to create and delete scratch orgs. Get its authorization URL with `sf org auth show-sfdx-auth-url --target-org dev-hub --json` and save only the `result.sfdxAuthUrl` value as the environment secret `DEVHUB_SFDX_URL`. The URL contains a refresh token. [Salesforce SFDX URL authentication](https://developer.salesforce.com/docs/platform/salesforce-cli-reference/guide/cli_reference_org_login_sfdx-url.html)
+
 ## Choose where deployments run
 
 The default is a GitHub-hosted Ubuntu runner. To use a runner available to the calling repository, add a JSON selector under the caller job's `with` block. For example:
