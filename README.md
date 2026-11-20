@@ -63,11 +63,12 @@ container-image: docker.io/salesforce/cli@sha256:14e83ce5d8d6357c5197419a857b5e5
 | `manifest` | Optional path to an unpackaged metadata manifest, relative to the app repo root. |
 | `package-versions` | Optional space-separated list of exact unlocked or managed 2GP version IDs starting with `04t`, ordered by dependency. Use released versions for a persistent UAT-to-Prod pipeline. |
 | `alchemy-config` | Optional Alchemy stack entry point. |
+| `build-script` | Optional npm script name from the calling app's root `package.json`. Runs after `npm ci` in the deployment checkout, before Salesforce login and deployment. |
 | `smoke-test` | Set to `true` to run the app’s `salesforce:smoke` npm script. Defaults to `false`. |
 
 When upgrading a v1 caller that relied on the previous defaults, set `alchemy-config: alchemy.run.ts` and `smoke-test: true` to retain both steps. Examples target the updated workflow on `main`. For rollout, pin the reviewed commit containing these inputs.
 
-Apps that enable Alchemy or the smoke test need a committed npm lockfile. Enabling the smoke test requires a `salesforce:smoke` npm script. The smoke script runs with `STAGE` and `SF_TARGET_ORG` set and the Salesforce CLI already authenticated. For example, a billing app can read a known record and exercise its callout using an org-specific test case. Put Alchemy in the app's lockfile if the job applies a stack.
+Apps that enable a build script, Alchemy, or the smoke test need a committed npm lockfile. Use a build script for generated Salesforce assets such as a UI bundle. Include the built component in your manifest and keep the output in the Salesforce project directory so the deploy can find it. Enabling the smoke test requires a `salesforce:smoke` npm script. The smoke script runs with `STAGE` and `SF_TARGET_ORG` set and the Salesforce CLI already authenticated. For example, a billing app can read a known record and exercise its callout using an org-specific test case. Put Alchemy in the app's lockfile if the job applies a stack.
 
 - **Unpackaged:** Set `manifest`. Prod validates against the target and quick-deploys that successful validation.
 - **Unlocked or managed 2GP:** Set `package-versions`. Build and promote versions separately in the Dev Hub. This job installs the versions you supply. It uses CLI noninteractive install, which approves external sites declared by a package. Review those as part of approving the version. Unlocked upgrades request `DeprecateOnly`; Salesforce still controls component-specific upgrade behavior.
