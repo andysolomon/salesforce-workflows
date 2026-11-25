@@ -166,7 +166,7 @@ jobs:
           SF_LOGIN_URL: ${{ vars.SF_LOGIN_URL }}
           SF_ORG_ID: ${{ vars.SF_ORG_ID }}
         run: |
-          : "${SF_JWT_KEY:?Set SF_JWT_KEY for the target environment}"
+          : "${SF_JWT_KEY:?Set SF_JWT_KEY for the target environment and pass it with secrets: inherit}"
           : "${SF_CLIENT_ID:?Set SF_CLIENT_ID for the target environment}"
           : "${SF_USERNAME:?Set SF_USERNAME for the target environment}"
           : "${SF_LOGIN_URL:?Set SF_LOGIN_URL for the target environment}"

@@ -12,7 +12,9 @@ Keep pull request CI in the app repo. Run unit tests and type checks there, and 
 
 ### Configure GitHub environments
 
-Create the environments used by your caller. The metadata example uses `integration-sandbox` and the promotion example uses `dev`, `uat`, and `prod`. Set `environment-name` to use your organization’s naming convention. The `stage` input selects sandbox or production deployment behavior. Use `stage: prod` for every production target. Set allowed deployment branches and tags for each. Configure Prod required reviewers where supported by your GitHub plan. Use an approval process appropriate to your repository before enabling production deployments. The reusable job declares the environment and receives its protection rules and credentials.
+Create the environments used by your caller. The metadata example uses `integration-sandbox` and the promotion example uses `dev`, `uat`, and `prod`. Set `environment-name` to use your organization’s naming convention. The `stage` input selects sandbox or production deployment behavior. Use `stage: prod` for every production target. Set allowed deployment branches and tags for each. Configure Prod required reviewers where supported by your GitHub plan. Use an approval process appropriate to your repository before enabling production deployments. The reusable job declares the environment and receives its protection rules. Environment secrets are available in that job only when the caller passes them.
+
+Add `secrets: inherit` on the calling job, at the same level as `uses` and `with`. GitHub does not forward environment secrets such as `SF_JWT_KEY` into a reusable workflow unless the caller inherits them or maps each secret by name. Omitting `secrets` leaves those values empty, and JWT login fails even though the secret is set on the GitHub Environment selected with `environment-name`. The metadata example uses `secrets: inherit`. The promotion example maps each secret by name.
 
 Set these variables and secrets for each environment:
 
@@ -28,7 +30,7 @@ Set these variables and secrets for each environment:
 | `CLOUDFLARE_API_TOKEN` | Optional secret | Token authorized to access that state store |
 | `ALCHEMY_APP_SECRETS` | Optional secret | Payload read by your Alchemy stack, for example credentials for an external integration |
 
-The example passes secrets by name. In the hosted runner, configure the Alchemy stack to use a persistent state backend and provision it before the first deployment. Use a distinct Alchemy stack name per app when sharing a backend, and use the same stage on every run for a given org. If the stack reads a structured secret payload, keep it out of logs. GitHub's automatic masking can miss individually parsed values.
+The promotion example passes secrets by name. In the hosted runner, configure the Alchemy stack to use a persistent state backend and provision it before the first deployment. Use a distinct Alchemy stack name per app when sharing a backend, and use the same stage on every run for a given org. If the stack reads a structured secret payload, keep it out of logs. GitHub's automatic masking can miss individually parsed values.
 
 The job serializes deployments to the same GitHub Environment within one calling repo. GitHub concurrency groups are repository-scoped. If multiple app repos write to the same org, coordinate those deployments across repos.
 
